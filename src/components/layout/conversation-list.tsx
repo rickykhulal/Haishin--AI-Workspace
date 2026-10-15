@@ -18,33 +18,35 @@ export function ConversationListItem({
   onDelete,
 }: ConversationListItemProps) {
   return (
-    <button
-      onClick={() => onSelect(conversation.id)}
+    <div
       className={cn(
-        "group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
-        "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8AB4F8] focus-visible:ring-inset",
+        "group flex w-full items-center gap-1 rounded-lg px-2 py-1 transition-colors",
         isActive
           ? "bg-[#1a2235] text-[#F3F5F9]"
           : "text-[#9AA6B8] hover:bg-[#151A23] hover:text-[#F3F5F9]",
       )}
-      aria-current={isActive ? "page" : undefined}
     >
-      <MessageSquare className="h-4 w-4 shrink-0 opacity-60" aria-hidden="true" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">{conversation.title}</p>
-        <p className="text-xs opacity-60">{formatTime(conversation.updatedAt)}</p>
-      </div>
       <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete(conversation.id);
-        }}
-        className="shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-red-900/30 hover:text-red-400 group-hover:opacity-100 focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[#8AB4F8]"
+        type="button"
+        onClick={() => onSelect(conversation.id)}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded py-1.5 pl-1 pr-2 text-left text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8AB4F8]"
+        aria-current={isActive ? "page" : undefined}
+      >
+        <MessageSquare className="h-4 w-4 shrink-0 opacity-60" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium leading-snug">{conversation.title}</p>
+          <p className="text-[11px] opacity-60">{formatTime(conversation.updatedAt)}</p>
+        </div>
+      </button>
+      <button
+        type="button"
+        onClick={() => onDelete(conversation.id)}
+        className="shrink-0 rounded p-1.5 opacity-0 transition-opacity hover:bg-red-900/30 hover:text-red-400 group-hover:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8AB4F8]"
         aria-label={`Delete conversation: ${conversation.title}`}
       >
         <Trash2 className="h-3.5 w-3.5" />
       </button>
-    </button>
+    </div>
   );
 }
 

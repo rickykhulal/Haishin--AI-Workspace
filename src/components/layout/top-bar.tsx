@@ -22,7 +22,7 @@ export function TopBar({
       {!sidebarOpen && (
         <button
           onClick={onToggleSidebar}
-          className="rounded-lg p-1.5 text-[#9AA6B8] transition-colors hover:bg-[#1a2235] hover:text-[#F3F5F9] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8AB4F8] lg:flex"
+          className="hidden rounded-lg p-1.5 text-[#9AA6B8] transition-colors hover:bg-[#1a2235] hover:text-[#F3F5F9] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8AB4F8] lg:flex"
           aria-label="Open sidebar"
         >
           <PanelLeft className="h-5 w-5" />

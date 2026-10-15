@@ -200,6 +200,10 @@ export function useConversations() {
 
   const createConversation = useCallback(
     (modelId: string = DEFAULT_MODEL_ID) => {
+      // If current active conversation is already brand new and empty, reuse it
+      if (activeConversation && activeConversation.messages.length === 0) {
+        return activeConversation.id;
+      }
       const id = generateId();
       dispatch({
         type: "NEW_CONVERSATION",
@@ -207,16 +211,22 @@ export function useConversations() {
       });
       return id;
     },
-    [],
+    [activeConversation],
   );
 
   const setActive = useCallback((id: string | null) => {
     dispatch({ type: "SET_ACTIVE", payload: id });
   }, []);
 
-  const deleteConversation = useCallback((id: string) => {
-    dispatch({ type: "DELETE_CONVERSATION", payload: id });
-  }, []);
+  const deleteConversation = useCallback(
+    (id: string) => {
+      if (state.activeConversationId === id && state.isGenerating) {
+        abortRef.current?.abort();
+      }
+      dispatch({ type: "DELETE_CONVERSATION", payload: id });
+    },
+    [state.activeConversationId, state.isGenerating],
+  );
 
   const sendMessage = useCallback(
     async (content: string, modelId: string = DEFAULT_MODEL_ID) => {
