@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+/* ─── Haishin Design Tokens ─── */
+:root {
+  --haishin-bg: #0B0D12;
+  --haishin-sidebar: #10141C;
+  --haishin-surface: #151A23;
+  --haishin-border: #273040;
+  --haishin-text-primary: #F3F5F9;
+  --haishin-text-secondary: #9AA6B8;
+  --haishin-accent: #8AB4F8;
+  --haishin-accent-hover: #a0c4fa;
+  --haishin-success: #34d399;
+  --haishin-warning: #fbbf24;
+  --haishin-error: #f87171;
+
+  --background: var(--haishin-bg);
+  --foreground: var(--haishin-text-primary);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* ─── Global Resets ─── */
+*,
+*::before,
+*::after {
+  scrollbar-width: thin;
+  scrollbar-color: var(--haishin-border) transparent;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Custom Scrollbar (WebKit) ─── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--haishin-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--haishin-text-secondary);
+}
+
+/* ─── Focus Visible ─── */
+:focus-visible {
+  outline: 2px solid var(--haishin-accent);
+  outline-offset: 2px;
+}
+
+/* ─── Selection ─── */
+::selection {
+  background: color-mix(in srgb, var(--haishin-accent) 30%, transparent);
+  color: var(--haishin-text-primary);
+}
+
+/* ─── Reduced Motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

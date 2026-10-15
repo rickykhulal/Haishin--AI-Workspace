@@ -1,0 +1,94 @@
+"use client";
+
+import { Bot, User, Loader2, AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { ChatMessage } from "@/features/conversations/types";
+import { MessageActions } from "./message-actions";
+import { MarkdownRenderer } from "./markdown-renderer";
+
+interface MessageBubbleProps {
+  message: ChatMessage;
+  onRetry?: () => void;
+}
+
+export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
+  const isUser = message.role === "user";
+  const isPending = message.status === "pending" || message.status === "streaming";
+  const isError = message.status === "error";
+
+  return (
+    <div
+      className={cn("group flex gap-3 py-4", isUser ? "justify-end" : "justify-start")}
+      role="article"
+      aria-label={`${isUser ? "You" : "Haishin Demo"}: ${isPending ? "Generating response…" : ""}`}
+    >
+      {/* Assistant avatar */}
+      {!isUser && (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#8AB4F8]/20 to-[#5B8DEF]/20 ring-1 ring-[#8AB4F8]/20">
+          <Bot className="h-4 w-4 text-[#8AB4F8]" aria-hidden="true" />
+        </div>
+      )}
+
+      <div
+        className={cn(
+          "flex max-w-[85%] flex-col sm:max-w-[75%]",
+          isUser ? "items-end" : "items-start",
+        )}
+      >
+        {/* Label */}
+        <div className="mb-1 flex items-center gap-2">
+          <span className="text-xs font-medium text-[#9AA6B8]">
+            {isUser ? "You" : "Haishin Demo"}
+          </span>
+          {!isUser && (
+            <span className="rounded bg-[#273040]/50 px-1.5 py-0.5 text-[10px] text-[#9AA6B8]">
+              mock
+            </span>
+          )}
+        </div>
+
+        {/* Message content */}
+        <div
+          className={cn(
+            "rounded-2xl px-4 py-3 text-sm leading-relaxed",
+            isUser
+              ? "rounded-br-md bg-[#8AB4F8] text-[#0B0D12]"
+              : "rounded-bl-md border border-[#273040]/50 bg-[#151A23] text-[#F3F5F9]",
+            isError && !isUser && "border-red-800/30 bg-red-950/20",
+          )}
+        >
+          {isPending ? (
+            <div className="flex items-center gap-2 text-[#9AA6B8]" role="status">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              <span>Generating response…</span>
+            </div>
+          ) : isError ? (
+            <div className="flex items-center gap-2 text-red-400">
+              <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>{message.content || "An error occurred."}</span>
+            </div>
+          ) : isUser ? (
+            <p className="whitespace-pre-wrap">{message.content}</p>
+          ) : (
+            <MarkdownRenderer content={message.content} />
+          )}
+        </div>
+
+        {/* Actions */}
+        <MessageActions
+          content={message.content}
+          role={message.role as "user" | "assistant"}
+          status={message.status}
+          onRetry={!isUser ? onRetry : undefined}
+        />
+      </div>
+
+      {/* User avatar */}
+      {isUser && (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#273040] ring-1 ring-[#273040]">
+          <User className="h-4 w-4 text-[#9AA6B8]" aria-hidden="true" />
+        </div>
+      )}
+    </div>
+  );
+}
