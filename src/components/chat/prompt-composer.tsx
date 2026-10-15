@@ -8,10 +8,17 @@ interface PromptComposerProps {
   onSend: (message: string) => void;
   onStop: () => void;
   isGenerating: boolean;
+  isLocal?: boolean;
   disabled?: boolean;
 }
 
-export function PromptComposer({ onSend, onStop, isGenerating, disabled = false }: PromptComposerProps) {
+export function PromptComposer({
+  onSend,
+  onStop,
+  isGenerating,
+  isLocal = true,
+  disabled = false,
+}: PromptComposerProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isComposingRef = useRef(false);
@@ -72,11 +79,21 @@ export function PromptComposer({ onSend, onStop, isGenerating, disabled = false 
               handleInput();
             }}
             onKeyDown={handleKeyDown}
-            onCompositionStart={() => { isComposingRef.current = true; }}
-            onCompositionEnd={() => { isComposingRef.current = false; }}
-            placeholder="Send a message…"
+            onCompositionStart={() => {
+              isComposingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              isComposingRef.current = false;
+            }}
+            placeholder={
+              isGenerating
+                ? "Waiting for response…"
+                : isLocal
+                  ? "Send a message to local model…"
+                  : "Send a message (demo mode)…"
+            }
             rows={1}
-            disabled={disabled}
+            disabled={disabled || isGenerating}
             className="max-h-[200px] min-h-[24px] flex-1 resize-none bg-transparent text-sm text-[#F3F5F9] placeholder-[#9AA6B8]/50 focus:outline-none disabled:opacity-50"
             aria-label="Message input"
           />
@@ -107,8 +124,10 @@ export function PromptComposer({ onSend, onStop, isGenerating, disabled = false 
           )}
         </div>
 
-        <p className="mt-2 text-center text-[10px] text-[#9AA6B8]/40">
-          Haishin Demo — responses are mock data, not from a trained model
+        <p className="mt-2 text-center text-[10px] text-[#9AA6B8]/50">
+          {isLocal
+            ? "Haishin Local — genuine offline inference via local runtime and Python backend"
+            : "Haishin Demo — responses are mock data, not from a trained model"}
         </p>
       </div>
     </div>

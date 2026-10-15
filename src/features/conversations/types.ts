@@ -6,12 +6,17 @@ export type MessageRole = "user" | "assistant" | "system";
 
 export type MessageStatus = "pending" | "streaming" | "complete" | "error";
 
+export type ResponseMode = "mock" | "local" | "external";
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
   createdAt: string;
   status: MessageStatus;
+  mode?: ResponseMode;
+  durationMs?: number;
+  modelName?: string;
 }
 
 export interface Conversation {
@@ -23,7 +28,7 @@ export interface Conversation {
   modelId: string;
 }
 
-export type ModelProvider = "demo" | "haishin" | "external";
+export type ModelProvider = "demo" | "local" | "haishin" | "external";
 export type ModelStatus = "available" | "coming_soon";
 
 export interface ModelOption {

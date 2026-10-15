@@ -15,16 +15,26 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const isPending = message.status === "pending" || message.status === "streaming";
   const isError = message.status === "error";
+  const isLocal = message.mode === "local";
+
+  const assistantName = isLocal ? "Haishin Local" : "Haishin Demo";
 
   return (
     <div
       className={cn("group flex gap-3 py-4", isUser ? "justify-end" : "justify-start")}
       role="article"
-      aria-label={`${isUser ? "You" : "Haishin Demo"}: ${isPending ? "Generating response…" : ""}`}
+      aria-label={`${isUser ? "You" : assistantName}: ${isPending ? "Generating response…" : ""}`}
     >
       {/* Assistant avatar */}
       {!isUser && (
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#8AB4F8]/20 to-[#5B8DEF]/20 ring-1 ring-[#8AB4F8]/20">
+        <div
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1",
+            isLocal
+              ? "bg-gradient-to-br from-[#8AB4F8]/30 to-[#5B8DEF]/30 ring-[#8AB4F8]/40"
+              : "bg-gradient-to-br from-[#8AB4F8]/20 to-[#5B8DEF]/20 ring-[#8AB4F8]/20",
+          )}
+        >
           <Bot className="h-4 w-4 text-[#8AB4F8]" aria-hidden="true" />
         </div>
       )}
@@ -35,15 +45,28 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
           isUser ? "items-end" : "items-start",
         )}
       >
-        {/* Label */}
+        {/* Label and badges */}
         <div className="mb-1 flex items-center gap-2">
           <span className="text-xs font-medium text-[#9AA6B8]">
-            {isUser ? "You" : "Haishin Demo"}
+            {isUser ? "You" : assistantName}
           </span>
           {!isUser && (
-            <span className="rounded bg-[#273040]/50 px-1.5 py-0.5 text-[10px] text-[#9AA6B8]">
-              mock
-            </span>
+            <>
+              {isLocal ? (
+                <span className="rounded border border-[#8AB4F8]/30 bg-[#8AB4F8]/15 px-1.5 py-0.5 text-[10px] font-medium text-[#8AB4F8]">
+                  local
+                </span>
+              ) : (
+                <span className="rounded bg-[#273040]/50 px-1.5 py-0.5 text-[10px] text-[#9AA6B8]">
+                  mock
+                </span>
+              )}
+              {message.durationMs && !isPending && (
+                <span className="text-[10px] text-[#9AA6B8]/60">
+                  {(message.durationMs / 1000).toFixed(1)}s
+                </span>
+              )}
+            </>
           )}
         </div>
 
@@ -54,18 +77,20 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
             isUser
               ? "rounded-br-md bg-[#8AB4F8] text-[#0B0D12]"
               : "rounded-bl-md border border-[#273040]/50 bg-[#151A23] text-[#F3F5F9]",
-            isError && !isUser && "border-red-800/30 bg-red-950/20",
+            isError && !isUser && "border-red-800/40 bg-red-950/30 text-red-200",
           )}
         >
           {isPending ? (
             <div className="flex items-center gap-2 text-[#9AA6B8]" role="status">
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              <span>Generating response…</span>
+              <Loader2 className="h-4 w-4 animate-spin text-[#8AB4F8]" aria-hidden="true" />
+              <span>{isLocal ? "Running local model…" : "Generating response…"}</span>
             </div>
           ) : isError ? (
-            <div className="flex items-center gap-2 text-red-400">
-              <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>{message.content || "An error occurred."}</span>
+            <div className="flex items-start gap-2.5 text-red-300">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" aria-hidden="true" />
+              <div className="whitespace-pre-wrap font-mono text-xs leading-relaxed">
+                {message.content || "An error occurred."}
+              </div>
             </div>
           ) : isUser ? (
             <p className="whitespace-pre-wrap">{message.content}</p>

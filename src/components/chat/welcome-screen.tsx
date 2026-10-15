@@ -1,9 +1,10 @@
 "use client";
 
-import { Sparkles, Code, Globe, BookOpen } from "lucide-react";
+import { Sparkles, Code, Globe, BookOpen, Cpu } from "lucide-react";
 
 interface WelcomeScreenProps {
   onSendPrompt: (prompt: string) => void;
+  isLocal?: boolean;
 }
 
 const SUGGESTED_PROMPTS = [
@@ -29,7 +30,7 @@ const SUGGESTED_PROMPTS = [
   },
 ];
 
-export function WelcomeScreen({ onSendPrompt }: WelcomeScreenProps) {
+export function WelcomeScreen({ onSendPrompt, isLocal = true }: WelcomeScreenProps) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
       <div className="mx-auto max-w-2xl text-center">
@@ -42,9 +43,22 @@ export function WelcomeScreen({ onSendPrompt }: WelcomeScreenProps) {
           Welcome to Haishin
         </h1>
         <p className="mt-2 text-sm text-[#9AA6B8]">
-          AI workspace by Haitian. Currently running in{" "}
-          <span className="font-medium text-amber-400">demo mode</span> — responses
-          are pre-written examples, not from a trained model.
+          AI workspace by Haitian.{" "}
+          {isLocal ? (
+            <span>
+              Currently in{" "}
+              <span className="font-medium text-[#8AB4F8] inline-flex items-center gap-1">
+                <Cpu className="h-3.5 w-3.5 inline" /> Local AI mode
+              </span>{" "}
+              — executing genuine inference offline via local runtime and Python backend.
+            </span>
+          ) : (
+            <span>
+              Currently in{" "}
+              <span className="font-medium text-amber-400">demo mode</span> —
+              responses are pre-written examples, not from a trained model.
+            </span>
+          )}
         </p>
 
         {/* Suggested prompts */}

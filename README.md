@@ -2,150 +2,171 @@
 
 Premium AI workspace by **Haitian (H-Y-C-E-A-N)**.
 
-> **v0.1 — Frontend Demo.** All responses are pre-written mock data. No trained model is running. This is the interface foundation for the Haishin AI platform.
+> **v0.2 — Local AI Inference Integration.** Genuine offline language model inference running locally on your hardware via a Python FastAPI backend and Ollama. No external inference API keys or paid cloud services required. The explicitly labeled Demo Mock mode is retained as a fallback.
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────┐
+│  Haishin Frontend (Next.js 16 + React 19)    │
+│  http://localhost:3000                       │
+└──────────────────────┬───────────────────────┘
+                       │ HTTP (REST / JSON)
+                       ▼
+┌──────────────────────────────────────────────┐
+│  Haishin Backend (Python + FastAPI)          │
+│  http://127.0.0.1:8000                       │
+│  - GET /health                               │
+│  - GET /v1/models                            │
+│  - POST /v1/chat/completions                 │
+└──────────────────────┬───────────────────────┘
+                       │ HTTP (127.0.0.1:11434)
+                       ▼
+┌──────────────────────────────────────────────┐
+│  Local Model Runtime (Ollama)                │
+│  - llama-server (NVIDIA GPU + CPU fallback)  │
+│  - Models: llama3.2:1b (recommended 1B)     │
+└──────────────────────────────────────────────┘
+```
+
+---
+
+## Hardware Profile & Model Sizing
+
+- **Tested Hardware:** NVIDIA GeForce GTX 1650 (4 GB dedicated VRAM), 16 GB System RAM.
+- **Recommended Model:** `llama3.2:1b` (Q4 quantization, ~1.3 GB download, ~1.8 GB VRAM).
+  - Fits 100% within the 4 GB VRAM for rapid, responsive generation.
+- **Larger Models (e.g. 7B–9B):**
+  - Models exceeding 4 GB VRAM (such as 9B Q4 models requiring ~5.6 GB) will offload extra layers to system RAM via CPU.
+  - While functional, initial cold load and token generation will have higher latency.
 
 ---
 
 ## Prerequisites
 
-| Tool    | Version  |
-|---------|----------|
-| Node.js | ≥ 20 LTS |
-| npm     | ≥ 10     |
-| Git     | ≥ 2.40   |
+| Component | Required Version | Purpose |
+|---|---|---|
+| **Node.js** | ≥ 20 LTS (tested v24) | Next.js frontend |
+| **npm** | ≥ 10 | Package management |
+| **Python** | ≥ 3.10 (tested v3.14) | FastAPI backend service |
+| **Ollama** | ≥ 0.3.0 (tested v0.40.4)| Local model inference daemon |
+| **Git** | ≥ 2.40 | Source control |
 
-## Quick Start
+---
 
-```bash
-# 1. Clone and enter the project
-cd haishin
+## Quick Start (Two Terminals on Windows)
 
-# 2. Install dependencies
-npm install --ignore-scripts
+### 1. Model Runtime Setup (Ollama)
 
-# 3. Start development server
-npm run dev
+1. Verify Ollama is installed and running:
+   ```powershell
+   ollama --version
+   curl.exe http://127.0.0.1:11434/api/tags
+   ```
+2. *(If not installed)*: Download and install Ollama from [https://ollama.com/download/windows](https://ollama.com/download/windows).
+3. Download the recommended lightweight 1B model (approx 1.3 GB):
+   ```powershell
+   ollama pull llama3.2:1b
+   ```
 
-# 4. Open in browser
-# → http://localhost:3000
+### 2. Terminal 1 — Start the Backend
+
+From `C:\PROJECT AI\haishin`:
+
+```powershell
+cd "C:\PROJECT AI\haishin"
+python -m pip install -r backend/requirements.txt
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 ```
+- Backend will be available at: **`http://127.0.0.1:8000`**
+- Health check: **`http://127.0.0.1:8000/health`**
+- Interactive API Docs: **`http://127.0.0.1:8000/docs`**
 
-## Available Commands
+### 3. Terminal 2 — Start the Frontend
 
-| Command           | Description                         |
-|-------------------|-------------------------------------|
-| `npm run dev`     | Start development server            |
-| `npm run build`   | Create production build             |
-| `npm start`       | Start production server             |
-| `npm run lint`    | Run ESLint                          |
+From `C:\PROJECT AI\haishin`:
+
+```powershell
+cd "C:\PROJECT AI\haishin"
+npm run dev
+```
+- Open browser at: **`http://localhost:3000`**
+
+---
 
 ## Project Structure
 
 ```
 haishin/
-├── src/
-│   ├── app/                    # Next.js App Router pages
-│   │   ├── layout.tsx          # Root layout with fonts + providers
-│   │   ├── page.tsx            # Home page → AppShell
-│   │   └── globals.css         # Design tokens + global styles
+├── backend/                    # Python FastAPI local inference service
+│   ├── app/
+│   │   ├── config.py           # Host, port, CORS, Ollama target URL
+│   │   ├── schemas.py          # Pydantic request/response schemas
+│   │   ├── ollama_adapter.py   # Ollama HTTP client with timeout & error handling
+│   │   └── main.py             # FastAPI routes (/health, /v1/models, /v1/chat/completions)
+│   ├── tests/
+│   │   └── test_api.py         # Pytest test suite with mocked adapters
+│   ├── .env.example
+│   ├── requirements.txt
+│   └── README.md
+├── src/                        # Next.js App Router frontend
+│   ├── app/
+│   │   ├── globals.css         # Haishin design tokens & dark styles
+│   │   ├── layout.tsx          # Root layout & providers
+│   │   └── page.tsx            # Main workspace
 │   ├── components/
-│   │   ├── layout/             # AppShell, Sidebar, TopBar, BrandMark
-│   │   ├── chat/               # ChatView, MessageBubble, Composer, Welcome
-│   │   ├── model/              # ModelSelector
+│   │   ├── chat/               # MessageBubble, MessageList, Composer, Welcome
+│   │   ├── layout/             # AppShell, Sidebar, TopBar, BrandMark, Settings
+│   │   ├── model/              # ModelSelector dropdown
 │   │   └── ui/                 # Toast, ConfirmDialog
 │   ├── features/
-│   │   └── conversations/      # Types, state (useReducer), models registry
-│   └── lib/                    # Demo responder, utilities
-├── .env.example                # Template (no secrets committed)
+│   │   └── conversations/      # Types, state reducer, models registry
+│   └── lib/
+│       ├── local-api.ts        # Client for FastAPI backend
+│       ├── demo-responder.ts   # Fallback mock responder
+│       └── utils.ts            # Formatting, IDs, clipboard
+├── tests/                      # Frontend unit test suite (node:test)
+├── .env.example
 ├── package.json
 ├── tsconfig.json
 └── README.md
 ```
 
-## Architecture
+---
 
-### State Management
+## Available Commands
 
-Conversations use a `useReducer` hook (`src/features/conversations/state.ts`) that manages:
-- Creating / switching / deleting conversations
-- Sending messages and receiving mock responses
-- Stop-generation (AbortController)
-- Retry last response
-- Loading, error, and empty states
+### Frontend
 
-### Demo Responder
+| Command | Working Directory | Description |
+|---|---|---|
+| `npm run dev` | `C:\PROJECT AI\haishin` | Start Next.js development server |
+| `npm run build` | `C:\PROJECT AI\haishin` | Build optimized production bundle |
+| `npm start` | `C:\PROJECT AI\haishin` | Start production server |
+| `npm run lint` | `C:\PROJECT AI\haishin` | Run ESLint static analysis |
+| `npm test` | `C:\PROJECT AI\haishin` | Run frontend unit tests (`node:test`) |
+| `npx tsc --noEmit` | `C:\PROJECT AI\haishin` | Run TypeScript strict type check |
 
-`src/lib/demo-responder.ts` returns pre-written responses with a simulated 0.8–2s delay. Every response carries `mode: "mock"` so the UI can label it honestly. This adapter will be replaced with a real API client in Phase 3.
+### Backend
 
-### Response Adapter Interface
+| Command | Working Directory | Description |
+|---|---|---|
+| `python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000` | `C:\PROJECT AI\haishin` | Start backend server |
+| `python -m pytest backend/tests/ -v` | `C:\PROJECT AI\haishin` | Run backend test suite |
 
-```typescript
-interface ChatRequest {
-  conversationId: string;
-  messages: Array<{ role: "user" | "assistant"; content: string }>;
-  modelId: string;
-}
+---
 
-interface ChatResponse {
-  message: { role: "assistant"; content: string };
-  mode: "mock" | "haishin" | "external";
-}
-```
+## Operational & Security Rules
 
-Future backends implement this same shape.
+1. **No External API Keys:** Haishin v0.2 does not communicate with OpenAI, Anthropic, or any third-party cloud inference provider.
+2. **Strictly Local Binding:** The backend binds to `127.0.0.1` and CORS is restricted to `localhost:3000`. It is never exposed publicly.
+3. **No Hidden Fallbacks:** When `Haishin Local` is selected, failure states (backend offline, Ollama offline, model missing, timeout) are reported honestly with exact instructions. The UI never silently swaps to mock responses.
+4. **Honest Labeling:** Messages produced by local inference carry a `"local"` pill badge, while mock messages carry a `"mock"` pill badge.
 
-## Features (v0.1)
-
-- [x] Premium dark workspace (deep navy palette)
-- [x] Sidebar with conversation history, new chat, settings
-- [x] Collapsible sidebar / mobile drawer
-- [x] Model selector (demo available, future models disabled)
-- [x] Welcome screen with suggested prompts
-- [x] Message bubbles with Markdown rendering (GFM)
-- [x] Code block syntax display
-- [x] Enter to send, Shift+Enter for newline, IME-aware
-- [x] Copy message action with feedback
-- [x] Retry last response
-- [x] Stop generation (AbortController)
-- [x] Loading spinner + error states
-- [x] Confirm dialog for destructive actions
-- [x] Toast notifications
-- [x] Demo disclosure everywhere — no fake model claims
-- [x] Responsive layout (mobile / tablet / desktop)
-- [x] Accessible: semantic HTML, ARIA, keyboard, focus-visible, reduced-motion
-- [x] Disabled attachment button ("Coming later")
-- [x] Settings dialog (display-only for now)
-
-## Known Limitations
-
-- **No persistence:** conversations are in-memory only; refreshing clears them.
-- **No real model:** all responses are pre-written mock content.
-- **No backend:** no API, database, or authentication.
-- **No tests yet:** unit tests will be added in Phase 2.
-- **ESLint deprecation warning:** `eslint@9.x` is used by `create-next-app` scaffold — functional but shows a deprecation notice.
-
-## Design Tokens
-
-| Token          | Value     |
-|----------------|-----------|
-| Background     | `#0B0D12` |
-| Sidebar        | `#10141C` |
-| Surface        | `#151A23` |
-| Border         | `#273040` |
-| Primary text   | `#F3F5F9` |
-| Secondary text | `#9AA6B8` |
-| Accent         | `#8AB4F8` |
-
-## Roadmap
-
-1. **Phase 1** ✅ Frontend foundation (this milestone)
-2. **Phase 2** — Frontend hardening: tests, localStorage, mobile polish
-3. **Phase 3** — Backend skeleton (FastAPI + typed schemas)
-4. **Phase 4** — Persistence + auth (PostgreSQL)
-5. **Phase 5** — First model experiment (PyTorch)
-6. **Phase 6** — Model improvement + evaluation
-7. **Phase 7** — Release readiness
+---
 
 ## License
 
-Private — Haitian (H-Y-C-E-A-N). Not yet licensed for public distribution.
+Private — Haitian (H-Y-C-E-A-N).

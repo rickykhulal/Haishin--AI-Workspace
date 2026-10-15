@@ -1,10 +1,11 @@
 "use client";
 
 import { useReducer, useCallback, useRef } from "react";
-import type { Conversation, ChatMessage } from "./types";
+import type { Conversation, ChatMessage, ResponseMode } from "./types";
 import { generateId, now } from "@/lib/utils";
 import { sendDemoRequest, generateTitle } from "@/lib/demo-responder";
-import { DEFAULT_MODEL_ID } from "./models";
+import { sendLocalChatRequest } from "@/lib/local-api";
+import { DEFAULT_MODEL_ID, isLocalModel } from "./models";
 
 // ────────────────────────────────────────────────────────────────────
 // State
@@ -41,6 +42,9 @@ type Action =
         messageId: string;
         status: ChatMessage["status"];
         content?: string;
+        mode?: ResponseMode;
+        durationMs?: number;
+        modelName?: string;
       };
     }
   | { type: "UPDATE_TITLE"; payload: { conversationId: string; title: string } }
@@ -137,6 +141,15 @@ function reducer(state: ConversationsState, action: Action): ConversationsState 
                     status: action.payload.status,
                     ...(action.payload.content !== undefined
                       ? { content: action.payload.content }
+                      : {}),
+                    ...(action.payload.mode !== undefined
+                      ? { mode: action.payload.mode }
+                      : {}),
+                    ...(action.payload.durationMs !== undefined
+                      ? { durationMs: action.payload.durationMs }
+                      : {}),
+                    ...(action.payload.modelName !== undefined
+                      ? { modelName: action.payload.modelName }
                       : {}),
                   }
                 : m,
@@ -265,6 +278,8 @@ export function useConversations() {
         });
       }
 
+      const isLocal = isLocalModel(modelId);
+
       // Pending assistant placeholder
       const assistantId = generateId();
       const pendingMessage: ChatMessage = {
@@ -273,6 +288,7 @@ export function useConversations() {
         content: "",
         createdAt: now(),
         status: "pending",
+        mode: isLocal ? "local" : "mock",
       };
       dispatch({
         type: "ADD_ASSISTANT_MESSAGE",
@@ -292,34 +308,60 @@ export function useConversations() {
       abortRef.current = controller;
 
       try {
-        const response = await sendDemoRequest(
-          { conversationId, messages: existingMessages, modelId },
-          controller.signal,
-        );
-        dispatch({
-          type: "UPDATE_MESSAGE_STATUS",
-          payload: {
-            conversationId,
-            messageId: assistantId,
-            status: "complete",
-            content: response.message.content,
-          },
-        });
-      } catch (err) {
+        if (isLocal) {
+          const response = await sendLocalChatRequest(
+            { conversationId, messages: existingMessages, modelId },
+            controller.signal,
+          );
+          dispatch({
+            type: "UPDATE_MESSAGE_STATUS",
+            payload: {
+              conversationId,
+              messageId: assistantId,
+              status: "complete",
+              content: response.message.content,
+              mode: "local",
+              durationMs: response.durationMs,
+              modelName: response.modelName,
+            },
+          });
+        } else {
+          const response = await sendDemoRequest(
+            { conversationId, messages: existingMessages, modelId },
+            controller.signal,
+          );
+          dispatch({
+            type: "UPDATE_MESSAGE_STATUS",
+            payload: {
+              conversationId,
+              messageId: assistantId,
+              status: "complete",
+              content: response.message.content,
+              mode: "mock",
+            },
+          });
+        }
+      } catch (err: unknown) {
         const isAbort = err instanceof DOMException && err.name === "AbortError";
+        const errorMessage = isAbort
+          ? "Response was cancelled."
+          : (err instanceof Error ? err.message : "An error occurred while generating a response.");
+
         dispatch({
           type: "UPDATE_MESSAGE_STATUS",
           payload: {
             conversationId,
             messageId: assistantId,
             status: "error",
-            content: isAbort
-              ? "Response was cancelled."
-              : "An error occurred while generating a response.",
+            content: errorMessage,
+            mode: isLocal ? "local" : "mock",
           },
         });
         if (!isAbort) {
-          dispatch({ type: "SET_ERROR", payload: "Failed to generate response" });
+          dispatch({
+            type: "SET_ERROR",
+            payload: isLocal ? "Local inference error" : "Failed to generate response",
+          });
         }
       } finally {
         dispatch({ type: "SET_GENERATING", payload: false });
@@ -344,6 +386,8 @@ export function useConversations() {
 
       dispatch({ type: "REMOVE_LAST_ASSISTANT", payload: activeConversation.id });
 
+      const isLocal = isLocalModel(modelId);
+
       const assistantId = generateId();
       const pendingMessage: ChatMessage = {
         id: assistantId,
@@ -351,6 +395,7 @@ export function useConversations() {
         content: "",
         createdAt: now(),
         status: "pending",
+        mode: isLocal ? "local" : "mock",
       };
       dispatch({
         type: "ADD_ASSISTANT_MESSAGE",
@@ -368,30 +413,61 @@ export function useConversations() {
       abortRef.current = controller;
 
       try {
-        const response = await sendDemoRequest(
-          { conversationId: activeConversation.id, messages: msgList, modelId },
-          controller.signal,
-        );
-        dispatch({
-          type: "UPDATE_MESSAGE_STATUS",
-          payload: {
-            conversationId: activeConversation.id,
-            messageId: assistantId,
-            status: "complete",
-            content: response.message.content,
-          },
-        });
-      } catch (err) {
+        if (isLocal) {
+          const response = await sendLocalChatRequest(
+            { conversationId: activeConversation.id, messages: msgList, modelId },
+            controller.signal,
+          );
+          dispatch({
+            type: "UPDATE_MESSAGE_STATUS",
+            payload: {
+              conversationId: activeConversation.id,
+              messageId: assistantId,
+              status: "complete",
+              content: response.message.content,
+              mode: "local",
+              durationMs: response.durationMs,
+              modelName: response.modelName,
+            },
+          });
+        } else {
+          const response = await sendDemoRequest(
+            { conversationId: activeConversation.id, messages: msgList, modelId },
+            controller.signal,
+          );
+          dispatch({
+            type: "UPDATE_MESSAGE_STATUS",
+            payload: {
+              conversationId: activeConversation.id,
+              messageId: assistantId,
+              status: "complete",
+              content: response.message.content,
+              mode: "mock",
+            },
+          });
+        }
+      } catch (err: unknown) {
         const isAbort = err instanceof DOMException && err.name === "AbortError";
+        const errorMessage = isAbort
+          ? "Response was cancelled."
+          : (err instanceof Error ? err.message : "An error occurred while retrying.");
+
         dispatch({
           type: "UPDATE_MESSAGE_STATUS",
           payload: {
             conversationId: activeConversation.id,
             messageId: assistantId,
             status: "error",
-            content: isAbort ? "Response was cancelled." : "An error occurred while retrying.",
+            content: errorMessage,
+            mode: isLocal ? "local" : "mock",
           },
         });
+        if (!isAbort) {
+          dispatch({
+            type: "SET_ERROR",
+            payload: isLocal ? "Local inference error" : "Failed to generate response",
+          });
+        }
       } finally {
         dispatch({ type: "SET_GENERATING", payload: false });
         abortRef.current = null;

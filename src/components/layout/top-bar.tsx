@@ -2,6 +2,7 @@
 
 import { PanelLeft } from "lucide-react";
 import { ModelSelector } from "@/components/model/model-selector";
+import { isLocalModel } from "@/features/conversations/models";
 
 interface TopBarProps {
   selectedModelId: string;
@@ -16,6 +17,8 @@ export function TopBar({
   onToggleSidebar,
   sidebarOpen,
 }: TopBarProps) {
+  const isLocal = isLocalModel(selectedModelId);
+
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-[#273040]/50 bg-[#0B0D12]/80 px-4 backdrop-blur">
       {/* Toggle sidebar (visible when sidebar is hidden) */}
@@ -43,11 +46,18 @@ export function TopBar({
       {/* Model selector */}
       <ModelSelector selectedId={selectedModelId} onChange={onModelChange} />
 
-      {/* Demo indicator */}
-      <div className="hidden items-center gap-1.5 rounded-full border border-amber-800/40 bg-amber-950/30 px-2.5 py-1 sm:flex">
-        <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-        <span className="text-xs text-amber-400">Demo</span>
-      </div>
+      {/* Runtime status indicator */}
+      {isLocal ? (
+        <div className="hidden items-center gap-1.5 rounded-full border border-[#8AB4F8]/40 bg-[#8AB4F8]/10 px-2.5 py-1 sm:flex">
+          <div className="h-1.5 w-1.5 rounded-full bg-[#8AB4F8] animate-pulse" />
+          <span className="text-xs font-medium text-[#8AB4F8]">Local AI</span>
+        </div>
+      ) : (
+        <div className="hidden items-center gap-1.5 rounded-full border border-amber-800/40 bg-amber-950/30 px-2.5 py-1 sm:flex">
+          <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+          <span className="text-xs text-amber-400">Demo (mock)</span>
+        </div>
+      )}
     </header>
   );
 }

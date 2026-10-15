@@ -89,6 +89,7 @@ export function AppShell() {
         <ChatView
           conversation={activeConversation}
           isGenerating={isGenerating}
+          selectedModelId={selectedModelId}
           onSend={handleSend}
           onStop={stopGeneration}
           onRetry={handleRetry}
