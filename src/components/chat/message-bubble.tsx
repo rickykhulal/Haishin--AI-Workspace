@@ -13,7 +13,8 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
   const isUser = message.role === "user";
-  const isPending = message.status === "pending" || message.status === "streaming";
+  const isPending = message.status === "pending" || (message.status === "streaming" && !message.content);
+  const isStreaming = message.status === "streaming" && Boolean(message.content);
   const isError = message.status === "error";
   const isLocal = message.mode === "local";
 
@@ -61,7 +62,12 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
                   mock
                 </span>
               )}
-              {message.durationMs && !isPending && (
+              {message.modelName && !isPending && !isStreaming && (
+                <span className="rounded border border-[#273040] bg-[#10141C] px-1.5 py-0.5 font-mono text-[10px] text-[#9AA6B8]">
+                  {message.modelName}
+                </span>
+              )}
+              {message.durationMs && !isPending && !isStreaming && (
                 <span className="text-[10px] text-[#9AA6B8]/60">
                   {(message.durationMs / 1000).toFixed(1)}s
                 </span>
@@ -95,7 +101,15 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
           ) : isUser ? (
             <p className="whitespace-pre-wrap">{message.content}</p>
           ) : (
-            <MarkdownRenderer content={message.content} />
+            <div>
+              <MarkdownRenderer content={message.content} />
+              {isStreaming && (
+                <span
+                  className="inline-block h-3.5 w-1.5 ml-1 bg-[#8AB4F8] animate-pulse align-middle"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
           )}
         </div>
 

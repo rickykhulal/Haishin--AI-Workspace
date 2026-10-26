@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, PanelLeftClose, Settings } from "lucide-react";
+import { Plus, PanelLeftClose, Settings, Activity } from "lucide-react";
 import { BrandMark } from "./brand-mark";
 import { ConversationList } from "./conversation-list";
 import type { Conversation } from "@/features/conversations/types";
@@ -13,6 +13,7 @@ interface SidebarProps {
   onNewChat: () => void;
   onDelete: (id: string) => void;
   onOpenSettings: () => void;
+  onOpenPerformance: () => void;
   isOpen: boolean;
   onToggle: () => void;
 }
@@ -24,6 +25,7 @@ export function Sidebar({
   onNewChat,
   onDelete,
   onOpenSettings,
+  onOpenPerformance,
   isOpen,
   onToggle,
 }: SidebarProps) {
@@ -80,10 +82,17 @@ export function Sidebar({
         </div>
 
         {/* Bottom section */}
-        <div className="border-t border-[#273040]/50 px-3 py-3">
+        <div className="border-t border-[#273040]/50 px-3 py-3 space-y-1">
+          <button
+            onClick={onOpenPerformance}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-[#9AA6B8] transition-colors hover:bg-[#151A23] hover:text-[#F3F5F9] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8AB4F8]"
+          >
+            <Activity className="h-4 w-4 text-[#8AB4F8]" aria-hidden="true" />
+            Performance & Models
+          </button>
           <button
             onClick={onOpenSettings}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#9AA6B8] transition-colors hover:bg-[#151A23] hover:text-[#F3F5F9] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8AB4F8]"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-[#9AA6B8] transition-colors hover:bg-[#151A23] hover:text-[#F3F5F9] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8AB4F8]"
           >
             <Settings className="h-4 w-4" aria-hidden="true" />
             Settings

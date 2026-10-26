@@ -95,14 +95,14 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             <h3 className="text-sm font-medium text-[#F3F5F9]">About</h3>
             <div className="mt-3 space-y-2 text-sm text-[#9AA6B8]">
               <p>
-                <span className="text-[#F3F5F9]">Haishin</span> v0.1.0 — Frontend Demo
+                <span className="text-[#F3F5F9]">Haishin</span> v0.7.0 — Local AI Workspace
               </p>
               <p>
                 Built by{" "}
                 <span className="text-[#F3F5F9]">Haitian (H-Y-C-E-A-N)</span>
               </p>
               <p className="text-xs text-[#9AA6B8]/60">
-                This is a development preview. No trained model is running.
+                Local offline inference powered by Ollama runtime.
               </p>
             </div>
           </section>

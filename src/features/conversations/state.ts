@@ -1,10 +1,11 @@
 "use client";
 
-import { useReducer, useCallback, useRef } from "react";
+import { useReducer, useCallback, useRef, useEffect } from "react";
 import type { Conversation, ChatMessage, ResponseMode } from "./types";
 import { generateId, now } from "@/lib/utils";
 import { sendDemoRequest, generateTitle } from "@/lib/demo-responder";
-import { sendLocalChatRequest } from "@/lib/local-api";
+import { sendLocalStreamingRequest } from "@/lib/local-api";
+import { loadConversations, saveConversations } from "@/lib/storage";
 import { DEFAULT_MODEL_ID, isLocalModel } from "./models";
 
 // ────────────────────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ const initialState: ConversationsState = {
 // ────────────────────────────────────────────────────────────────────
 
 type Action =
+  | { type: "LOAD_CONVERSATIONS"; payload: Conversation[] }
   | { type: "NEW_CONVERSATION"; payload: { id: string; modelId: string; timestamp: string } }
   | { type: "SET_ACTIVE"; payload: string | null }
   | { type: "DELETE_CONVERSATION"; payload: string }
@@ -50,7 +52,8 @@ type Action =
   | { type: "UPDATE_TITLE"; payload: { conversationId: string; title: string } }
   | { type: "SET_GENERATING"; payload: boolean }
   | { type: "SET_ERROR"; payload: string | null }
-  | { type: "REMOVE_LAST_ASSISTANT"; payload: string };
+  | { type: "REMOVE_LAST_ASSISTANT"; payload: string }
+  | { type: "UPDATE_MODEL"; payload: { conversationId: string; modelId: string } };
 
 // ────────────────────────────────────────────────────────────────────
 // Reducer
@@ -66,6 +69,18 @@ function updateConversation(
 
 function reducer(state: ConversationsState, action: Action): ConversationsState {
   switch (action.type) {
+    case "LOAD_CONVERSATIONS": {
+      const convs = action.payload;
+      return {
+        ...state,
+        conversations: convs,
+        activeConversationId:
+          state.activeConversationId && convs.some((c) => c.id === state.activeConversationId)
+            ? state.activeConversationId
+            : (convs[0]?.id ?? null),
+      };
+    }
+
     case "NEW_CONVERSATION": {
       const newConv: Conversation = {
         id: action.payload.id,
@@ -188,6 +203,16 @@ function reducer(state: ConversationsState, action: Action): ConversationsState 
         ),
       };
 
+    case "UPDATE_MODEL":
+      return {
+        ...state,
+        conversations: updateConversation(
+          state.conversations,
+          action.payload.conversationId,
+          (c) => ({ ...c, modelId: action.payload.modelId }),
+        ),
+      };
+
     default:
       return state;
   }
@@ -207,6 +232,22 @@ function findLastIndex<T>(arr: T[], predicate: (item: T) => boolean): number {
 export function useConversations() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const abortRef = useRef<AbortController | null>(null);
+  const isLoadedRef = useRef(false);
+
+  // Load persisted conversations on client mount
+  useEffect(() => {
+    const loaded = loadConversations();
+    if (loaded.length > 0) {
+      dispatch({ type: "LOAD_CONVERSATIONS", payload: loaded });
+    }
+    isLoadedRef.current = true;
+  }, []);
+
+  // Save conversations to localStorage after state updates
+  useEffect(() => {
+    if (!isLoadedRef.current) return;
+    saveConversations(state.conversations);
+  }, [state.conversations]);
 
   const activeConversation =
     state.conversations.find((c) => c.id === state.activeConversationId) ?? null;
@@ -229,6 +270,12 @@ export function useConversations() {
 
   const setActive = useCallback((id: string | null) => {
     dispatch({ type: "SET_ACTIVE", payload: id });
+  }, []);
+
+  const renameConversation = useCallback((id: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    dispatch({ type: "UPDATE_TITLE", payload: { conversationId: id, title: trimmed } });
   }, []);
 
   const deleteConversation = useCallback(
@@ -256,6 +303,8 @@ export function useConversations() {
         });
       }
 
+      const targetConvId = conversationId;
+
       // User message
       const userMessage: ChatMessage = {
         id: generateId(),
@@ -266,15 +315,19 @@ export function useConversations() {
       };
       dispatch({
         type: "ADD_USER_MESSAGE",
-        payload: { conversationId, message: userMessage },
+        payload: { conversationId: targetConvId, message: userMessage },
+      });
+      dispatch({
+        type: "UPDATE_MODEL",
+        payload: { conversationId: targetConvId, modelId },
       });
 
       // Set title from first message
-      const conv = state.conversations.find((c) => c.id === conversationId);
+      const conv = state.conversations.find((c) => c.id === targetConvId);
       if (!conv || conv.messages.length === 0) {
         dispatch({
           type: "UPDATE_TITLE",
-          payload: { conversationId, title: generateTitle(trimmed) },
+          payload: { conversationId: targetConvId, title: generateTitle(trimmed) },
         });
       }
 
@@ -292,7 +345,7 @@ export function useConversations() {
       };
       dispatch({
         type: "ADD_ASSISTANT_MESSAGE",
-        payload: { conversationId, message: pendingMessage },
+        payload: { conversationId: targetConvId, message: pendingMessage },
       });
       dispatch({ type: "SET_GENERATING", payload: true });
       dispatch({ type: "SET_ERROR", payload: null });
@@ -306,17 +359,33 @@ export function useConversations() {
 
       const controller = new AbortController();
       abortRef.current = controller;
+      let streamedContent = "";
 
       try {
         if (isLocal) {
-          const response = await sendLocalChatRequest(
-            { conversationId, messages: existingMessages, modelId },
+          const response = await sendLocalStreamingRequest(
+            { conversationId: targetConvId, messages: existingMessages, modelId },
+            (chunk) => {
+              streamedContent = chunk.accumulatedContent;
+              dispatch({
+                type: "UPDATE_MESSAGE_STATUS",
+                payload: {
+                  conversationId: targetConvId,
+                  messageId: assistantId,
+                  status: "streaming",
+                  content: chunk.accumulatedContent,
+                  mode: "local",
+                  durationMs: chunk.durationMs,
+                  modelName: chunk.model,
+                },
+              });
+            },
             controller.signal,
           );
           dispatch({
             type: "UPDATE_MESSAGE_STATUS",
             payload: {
-              conversationId,
+              conversationId: targetConvId,
               messageId: assistantId,
               status: "complete",
               content: response.message.content,
@@ -327,13 +396,13 @@ export function useConversations() {
           });
         } else {
           const response = await sendDemoRequest(
-            { conversationId, messages: existingMessages, modelId },
+            { conversationId: targetConvId, messages: existingMessages, modelId },
             controller.signal,
           );
           dispatch({
             type: "UPDATE_MESSAGE_STATUS",
             payload: {
-              conversationId,
+              conversationId: targetConvId,
               messageId: assistantId,
               status: "complete",
               content: response.message.content,
@@ -343,25 +412,39 @@ export function useConversations() {
         }
       } catch (err: unknown) {
         const isAbort = err instanceof DOMException && err.name === "AbortError";
-        const errorMessage = isAbort
-          ? "Response was cancelled."
-          : (err instanceof Error ? err.message : "An error occurred while generating a response.");
-
-        dispatch({
-          type: "UPDATE_MESSAGE_STATUS",
-          payload: {
-            conversationId,
-            messageId: assistantId,
-            status: "error",
-            content: errorMessage,
-            mode: isLocal ? "local" : "mock",
-          },
-        });
-        if (!isAbort) {
+        if (isAbort && streamedContent.trim().length > 0) {
+          // If stopped after partial response was generated, retain streamed text as complete
           dispatch({
-            type: "SET_ERROR",
-            payload: isLocal ? "Local inference error" : "Failed to generate response",
+            type: "UPDATE_MESSAGE_STATUS",
+            payload: {
+              conversationId: targetConvId,
+              messageId: assistantId,
+              status: "complete",
+              content: streamedContent,
+              mode: isLocal ? "local" : "mock",
+            },
           });
+        } else {
+          const errorMessage = isAbort
+            ? "Response was cancelled."
+            : (err instanceof Error ? err.message : "An error occurred while generating a response.");
+
+          dispatch({
+            type: "UPDATE_MESSAGE_STATUS",
+            payload: {
+              conversationId: targetConvId,
+              messageId: assistantId,
+              status: "error",
+              content: errorMessage,
+              mode: isLocal ? "local" : "mock",
+            },
+          });
+          if (!isAbort) {
+            dispatch({
+              type: "SET_ERROR",
+              payload: isLocal ? "Local inference error" : "Failed to generate response",
+            });
+          }
         }
       } finally {
         dispatch({ type: "SET_GENERATING", payload: false });
@@ -378,13 +461,14 @@ export function useConversations() {
   const retryLastMessage = useCallback(
     async (modelId: string = DEFAULT_MODEL_ID) => {
       if (!activeConversation) return;
+      const targetConvId = activeConversation.id;
 
       const lastUserMsg = [...activeConversation.messages]
         .reverse()
         .find((m) => m.role === "user");
       if (!lastUserMsg) return;
 
-      dispatch({ type: "REMOVE_LAST_ASSISTANT", payload: activeConversation.id });
+      dispatch({ type: "REMOVE_LAST_ASSISTANT", payload: targetConvId });
 
       const isLocal = isLocalModel(modelId);
 
@@ -399,7 +483,7 @@ export function useConversations() {
       };
       dispatch({
         type: "ADD_ASSISTANT_MESSAGE",
-        payload: { conversationId: activeConversation.id, message: pendingMessage },
+        payload: { conversationId: targetConvId, message: pendingMessage },
       });
       dispatch({ type: "SET_GENERATING", payload: true });
       dispatch({ type: "SET_ERROR", payload: null });
@@ -411,17 +495,33 @@ export function useConversations() {
 
       const controller = new AbortController();
       abortRef.current = controller;
+      let streamedContent = "";
 
       try {
         if (isLocal) {
-          const response = await sendLocalChatRequest(
-            { conversationId: activeConversation.id, messages: msgList, modelId },
+          const response = await sendLocalStreamingRequest(
+            { conversationId: targetConvId, messages: msgList, modelId },
+            (chunk) => {
+              streamedContent = chunk.accumulatedContent;
+              dispatch({
+                type: "UPDATE_MESSAGE_STATUS",
+                payload: {
+                  conversationId: targetConvId,
+                  messageId: assistantId,
+                  status: "streaming",
+                  content: chunk.accumulatedContent,
+                  mode: "local",
+                  durationMs: chunk.durationMs,
+                  modelName: chunk.model,
+                },
+              });
+            },
             controller.signal,
           );
           dispatch({
             type: "UPDATE_MESSAGE_STATUS",
             payload: {
-              conversationId: activeConversation.id,
+              conversationId: targetConvId,
               messageId: assistantId,
               status: "complete",
               content: response.message.content,
@@ -432,13 +532,13 @@ export function useConversations() {
           });
         } else {
           const response = await sendDemoRequest(
-            { conversationId: activeConversation.id, messages: msgList, modelId },
+            { conversationId: targetConvId, messages: msgList, modelId },
             controller.signal,
           );
           dispatch({
             type: "UPDATE_MESSAGE_STATUS",
             payload: {
-              conversationId: activeConversation.id,
+              conversationId: targetConvId,
               messageId: assistantId,
               status: "complete",
               content: response.message.content,
@@ -448,25 +548,39 @@ export function useConversations() {
         }
       } catch (err: unknown) {
         const isAbort = err instanceof DOMException && err.name === "AbortError";
-        const errorMessage = isAbort
-          ? "Response was cancelled."
-          : (err instanceof Error ? err.message : "An error occurred while retrying.");
-
-        dispatch({
-          type: "UPDATE_MESSAGE_STATUS",
-          payload: {
-            conversationId: activeConversation.id,
-            messageId: assistantId,
-            status: "error",
-            content: errorMessage,
-            mode: isLocal ? "local" : "mock",
-          },
-        });
-        if (!isAbort) {
+        if (isAbort && streamedContent.trim().length > 0) {
+          // If stopped after partial response was generated, retain streamed text as complete
           dispatch({
-            type: "SET_ERROR",
-            payload: isLocal ? "Local inference error" : "Failed to generate response",
+            type: "UPDATE_MESSAGE_STATUS",
+            payload: {
+              conversationId: targetConvId,
+              messageId: assistantId,
+              status: "complete",
+              content: streamedContent,
+              mode: isLocal ? "local" : "mock",
+            },
           });
+        } else {
+          const errorMessage = isAbort
+            ? "Response was cancelled."
+            : (err instanceof Error ? err.message : "An error occurred while retrying.");
+
+          dispatch({
+            type: "UPDATE_MESSAGE_STATUS",
+            payload: {
+              conversationId: targetConvId,
+              messageId: assistantId,
+              status: "error",
+              content: errorMessage,
+              mode: isLocal ? "local" : "mock",
+            },
+          });
+          if (!isAbort) {
+            dispatch({
+              type: "SET_ERROR",
+              payload: isLocal ? "Local inference error" : "Failed to generate response",
+            });
+          }
         }
       } finally {
         dispatch({ type: "SET_GENERATING", payload: false });
@@ -476,12 +590,18 @@ export function useConversations() {
     [activeConversation],
   );
 
+  const setConversationModel = useCallback((conversationId: string, modelId: string) => {
+    dispatch({ type: "UPDATE_MODEL", payload: { conversationId, modelId } });
+  }, []);
+
   return {
     ...state,
     activeConversation,
     createConversation,
     setActive,
+    renameConversation,
     deleteConversation,
+    setConversationModel,
     sendMessage,
     stopGeneration,
     retryLastMessage,

@@ -5,6 +5,7 @@ import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
 import { ChatView } from "@/components/chat/chat-view";
 import { SettingsDialog } from "./settings-dialog";
+import { PerformanceDashboard } from "@/components/performance/performance-dashboard";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useConversations } from "@/features/conversations/state";
 import { DEFAULT_MODEL_ID } from "@/features/conversations/models";
@@ -19,6 +20,7 @@ export function AppShell() {
     createConversation,
     setActive,
     deleteConversation,
+    setConversationModel,
     sendMessage,
     stopGeneration,
     retryLastMessage,
@@ -26,6 +28,7 @@ export function AppShell() {
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [performanceOpen, setPerformanceOpen] = useState(false);
   const [selectedModelId, setSelectedModelId] = useState(DEFAULT_MODEL_ID);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
@@ -40,11 +43,25 @@ export function AppShell() {
   const handleSelectConversation = useCallback(
     (id: string) => {
       setActive(id);
+      const conv = conversations.find((c) => c.id === id);
+      if (conv?.modelId) {
+        setSelectedModelId(conv.modelId);
+      }
       if (window.innerWidth < 1024) {
         setSidebarOpen(false);
       }
     },
-    [setActive],
+    [setActive, conversations],
+  );
+
+  const handleModelChange = useCallback(
+    (newModelId: string) => {
+      setSelectedModelId(newModelId);
+      if (activeConversationId) {
+        setConversationModel(activeConversationId, newModelId);
+      }
+    },
+    [activeConversationId, setConversationModel],
   );
 
   const handleSend = useCallback(
@@ -74,6 +91,7 @@ export function AppShell() {
         onNewChat={handleNewChat}
         onDelete={setDeleteTarget}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenPerformance={() => setPerformanceOpen(true)}
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen((prev) => !prev)}
       />
@@ -81,7 +99,7 @@ export function AppShell() {
       <main className="flex flex-1 flex-col overflow-hidden">
         <TopBar
           selectedModelId={selectedModelId}
-          onModelChange={setSelectedModelId}
+          onModelChange={handleModelChange}
           onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
           sidebarOpen={sidebarOpen}
         />
@@ -107,6 +125,7 @@ export function AppShell() {
       </main>
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <PerformanceDashboard open={performanceOpen} onClose={() => setPerformanceOpen(false)} />
 
       <ConfirmDialog
         open={deleteTarget !== null}

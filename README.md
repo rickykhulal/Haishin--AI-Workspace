@@ -2,7 +2,7 @@
 
 Premium AI workspace by **Haitian (H-Y-C-E-A-N)**.
 
-> **v0.2 — Local AI Inference Integration.** Genuine offline language model inference running locally on your hardware via a Python FastAPI backend and Ollama. No external inference API keys or paid cloud services required. The explicitly labeled Demo Mock mode is retained as a fallback.
+> **v0.2.1 — Switch to Verified Local Model.** Genuine offline language model inference running locally on your hardware via Python FastAPI backend and Ollama, defaulting to the verified, high-speed `llama3.2:1b` model (1.3 GB, fits within 4 GB VRAM). Explicitly labeled Demo Mock mode retained as fallback.
 
 ---
 

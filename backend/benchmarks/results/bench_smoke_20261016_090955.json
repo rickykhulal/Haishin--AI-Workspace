@@ -1,0 +1,63 @@
+{
+  "benchmark_version": "1.0",
+  "run_id": "bench_smoke_20261016_090955",
+  "timestamp": "2026-10-16T03:24:55.985315+00:00",
+  "model_id": "llama3.2:1b",
+  "is_smoke": true,
+  "total_prompts": 3,
+  "passed": 3,
+  "failed": 0,
+  "timed_out": 0,
+  "errored": 0,
+  "pass_rate_percent": 100.0,
+  "total_duration_ms": 622,
+  "avg_latency_ms": 206.7,
+  "avg_tokens_per_sec": 27.1,
+  "results": [
+    {
+      "id": "fact-capital-nepal",
+      "category": "factual",
+      "prompt": "What is the capital city of Nepal? Answer in one short sentence or word.",
+      "evaluation_type": "deterministic",
+      "passed": true,
+      "score": 1.0,
+      "reason": "Correctly identified Kathmandu as the capital of Nepal.",
+      "output": "Kathmandu.",
+      "latency_ms": 427,
+      "eval_tokens": 6,
+      "prompt_tokens": 41,
+      "tokens_per_sec": 14.05,
+      "error": null
+    },
+    {
+      "id": "reason-mult-17x4",
+      "category": "reasoning",
+      "prompt": "What is 17 multiplied by 4? Output only the numerical answer without extra commentary.",
+      "evaluation_type": "deterministic",
+      "passed": true,
+      "score": 1.0,
+      "reason": "Correctly calculated 17 * 4 = 68.",
+      "output": "68",
+      "latency_ms": 112,
+      "eval_tokens": 2,
+      "prompt_tokens": 43,
+      "tokens_per_sec": 17.86,
+      "error": null
+    },
+    {
+      "id": "inst-all-caps-confirmed",
+      "category": "instruction_following",
+      "prompt": "Respond with the single word 'CONFIRMED' in all uppercase letters. Do not add any greeting or punctuation.",
+      "evaluation_type": "deterministic",
+      "passed": true,
+      "score": 1.0,
+      "reason": "Exact match for 'CONFIRMED'.",
+      "output": "CONFIRMED",
+      "latency_ms": 81,
+      "eval_tokens": 4,
+      "prompt_tokens": 48,
+      "tokens_per_sec": 49.38,
+      "error": null
+    }
+  ]
+}
