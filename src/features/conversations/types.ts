@@ -17,6 +17,9 @@ export interface ChatMessage {
   mode?: ResponseMode;
   durationMs?: number;
   modelName?: string;
+  doneReason?: "stop" | "length" | "unknown";
+  images?: string[];
+  thinking?: string;
 }
 
 export interface Conversation {

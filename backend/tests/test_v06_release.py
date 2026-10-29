@@ -78,13 +78,13 @@ def test_config_empty_model_fallback():
 
 
 def test_health_version_is_060():
-    """Verify /health response version is 0.6.0."""
+    """Verify /health response version is acceptable."""
     with patch("backend.app.main.ollama_adapter.check_runtime", new_callable=AsyncMock) as mock_check:
         mock_check.return_value = (True, [{"name": "llama3.2:1b"}])
         response = client.get("/health")
         assert response.status_code == 200
         data = response.json()
-        assert data["version"] in ["0.6.0", "0.7.0"]
+        assert data["version"] in ["0.6.0", "0.7.0", "0.8.0"]
 
 
 def test_generic_inference_error_does_not_leak_details():

@@ -31,6 +31,10 @@ class InferenceError(OllamaError):
     """Raised when Ollama returns an error status or malformed output."""
     pass
 
+class VisionUnsupportedError(OllamaError):
+    """Raised when an image payload is supplied to a text-only model."""
+    pass
+
 
 class OllamaAdapter:
     """Decoupled client adapter for local Ollama HTTP API with status telemetry."""
@@ -216,28 +220,78 @@ class OllamaAdapter:
         # 3. Fallback to first available model
         return installed_names[0]
 
+    def _get_timeout_for_model(self, target_model: str) -> float:
+        """Dynamic timeout allowance for large models offloading to CPU RAM."""
+        lower_name = target_model.lower()
+        if "9b" in lower_name or "qwythos" in lower_name or "qwen" in lower_name:
+            return max(self.timeout, 240.0)
+        return self.timeout
+
+    async def is_vision_model(self, model_name: str) -> bool:
+        """Check whether the resolved model supports multimodal image analysis."""
+        lower_name = model_name.lower()
+        if "vision" in lower_name or "llava" in lower_name:
+            return True
+        try:
+            tags = await self.get_tags()
+            for m in tags:
+                if m.get("name") == model_name or m.get("name", "").startswith(model_name):
+                    details = m.get("details", {}) or {}
+                    families = details.get("families", []) or []
+                    family = details.get("family", "")
+                    all_families = [f.lower() for f in families] + [family.lower()]
+                    if any(vf in all_families for vf in ["mllama", "llava", "clip"]):
+                        return True
+        except Exception:
+            pass
+        return False
+
     async def chat(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[Dict[str, Any]],
         model: Optional[str] = None,
         temperature: Optional[float] = None,
+        num_predict: Optional[int] = None,
+        num_ctx: Optional[int] = None,
+        options: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Send chat completion to Ollama /api/chat with timing and error translation."""
+        """Send chat completion to Ollama /api/chat with timing, options, and error translation."""
         target_model = await self.resolve_model(model)
         url = f"{self.base_url}/api/chat"
+
+        # Multimodal capability check
+        has_images = any(bool(m.get("images")) for m in messages if isinstance(m, dict))
+        if has_images:
+            is_vision = await self.is_vision_model(target_model)
+            if not is_vision:
+                raise VisionUnsupportedError(
+                    f"Model '{target_model}' is text-only and does not support image input. "
+                    "Please select a multimodal vision model to process images."
+                )
+
+        options_payload: Dict[str, Any] = {}
+        if temperature is not None:
+            options_payload["temperature"] = temperature
+        if num_predict is not None:
+            options_payload["num_predict"] = num_predict
+        if num_ctx is not None:
+            options_payload["num_ctx"] = num_ctx
+        if options:
+            options_payload.update(options)
 
         payload: Dict[str, Any] = {
             "model": target_model,
             "messages": messages,
             "stream": False,
         }
-        if temperature is not None:
-            payload["options"] = {"temperature": temperature}
+        if options_payload:
+            payload["options"] = options_payload
 
+        timeout = self._get_timeout_for_model(target_model)
         start_time = time.perf_counter()
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
+            async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
                 response = await client.post(url, json=payload)
 
                 if response.status_code == 404:
@@ -253,7 +307,7 @@ class OllamaAdapter:
             ) from exc
         except httpx.TimeoutException as exc:
             raise InferenceTimeoutError(
-                f"Inference timed out after {self.timeout} seconds for model '{target_model}'. "
+                f"Inference timed out after {timeout} seconds for model '{target_model}'. "
                 "The model may be too large for available GPU VRAM or busy loading."
             ) from exc
         except httpx.HTTPStatusError as exc:
@@ -261,30 +315,46 @@ class OllamaAdapter:
                 f"Ollama returned HTTP error {exc.response.status_code}: {exc.response.text}"
             ) from exc
         except Exception as exc:
+            if isinstance(exc, (ModelNotFoundError, RuntimeUnavailableError, InferenceTimeoutError, InferenceError, VisionUnsupportedError)):
+                raise
             raise InferenceError(f"Unexpected inference error: {str(exc)}") from exc
 
         duration_ms = int((time.perf_counter() - start_time) * 1000)
 
         assistant_msg = data.get("message", {})
-        # Validate that Ollama returned actual content; raise if empty to avoid silent failures
-        if not isinstance(assistant_msg, dict) or not assistant_msg.get("content"):
-            raise InferenceError("Ollama returned empty content for the model response.")
+        if not isinstance(assistant_msg, dict):
+            raise InferenceError("Ollama returned malformed message payload.")
+
         content = assistant_msg.get("content", "")
+        thinking = assistant_msg.get("thinking", "")
+
+        # Fallback to thinking if content is empty (e.g. reasoning model cut off during thinking)
+        if not content and thinking:
+            content = thinking
+        elif not content and not thinking:
+            raise InferenceError("Ollama returned empty content for the model response.")
+
+        done_reason = data.get("done_reason") or "stop"
 
         return {
             "model": target_model,
             "content": content,
+            "thinking": thinking if thinking else None,
             "prompt_tokens": data.get("prompt_eval_count"),
             "completion_tokens": data.get("eval_count"),
             "total_tokens": (data.get("prompt_eval_count") or 0) + (data.get("eval_count") or 0),
             "duration_ms": duration_ms,
+            "done_reason": done_reason,
         }
 
     async def chat_stream(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[Dict[str, Any]],
         model: Optional[str] = None,
         temperature: Optional[float] = None,
+        num_predict: Optional[int] = None,
+        num_ctx: Optional[int] = None,
+        options: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Progressively stream chat completion chunks from Ollama /api/chat as SSE events.
@@ -296,17 +366,43 @@ class OllamaAdapter:
             yield f"data: {json.dumps({'error': str(exc), 'done': True})}\n\n"
             return
 
+        # Multimodal capability check
+        has_images = any(bool(m.get("images")) for m in messages if isinstance(m, dict))
+        if has_images:
+            is_vision = await self.is_vision_model(target_model)
+            if not is_vision:
+                err_msg = (
+                    f"Model '{target_model}' is text-only and does not support image input. "
+                    "Please select a multimodal vision model to process images."
+                )
+                yield f"data: {json.dumps({'error': err_msg, 'done': True})}\n\n"
+                return
+
         url = f"{self.base_url}/api/chat"
+        options_payload: Dict[str, Any] = {}
+        if temperature is not None:
+            options_payload["temperature"] = temperature
+        if num_predict is not None:
+            options_payload["num_predict"] = num_predict
+        if num_ctx is not None:
+            options_payload["num_ctx"] = num_ctx
+        if options:
+            options_payload.update(options)
+
         payload: Dict[str, Any] = {
             "model": target_model,
             "messages": messages,
             "stream": True,
         }
-        if temperature is not None:
-            payload["options"] = {"temperature": temperature}
+        if options_payload:
+            payload["options"] = options_payload
 
+        timeout = self._get_timeout_for_model(target_model)
         start_time = time.perf_counter()
-        client = httpx.AsyncClient(timeout=self.timeout, trust_env=False)
+        client = httpx.AsyncClient(timeout=timeout, trust_env=False)
+        accumulated_content = ""
+        accumulated_thinking = ""
+
         try:
             async with client.stream("POST", url, json=payload) as response:
                 if response.status_code == 404:
@@ -324,11 +420,20 @@ class OllamaAdapter:
                         continue
 
                     is_done = chunk.get("done", False)
-                    delta = chunk.get("message", {}).get("content", "")
+                    msg = chunk.get("message", {})
+                    delta = msg.get("content", "")
+                    thinking_delta = msg.get("thinking", "")
+                    done_reason = chunk.get("done_reason")
 
                     if delta:
+                        accumulated_content += delta
+                    if thinking_delta:
+                        accumulated_thinking += thinking_delta
+
+                    if delta or thinking_delta:
                         chunk_payload = {
                             "delta": delta,
+                            "thinking_delta": thinking_delta if thinking_delta else None,
                             "done": False,
                             "model": target_model,
                         }
@@ -338,14 +443,19 @@ class OllamaAdapter:
                         duration_ms = int((time.perf_counter() - start_time) * 1000)
                         prompt_eval = chunk.get("prompt_eval_count") or 0
                         eval_count = chunk.get("eval_count") or 0
+                        fallback_delta = ""
+                        if not accumulated_content and accumulated_thinking:
+                            fallback_delta = accumulated_thinking
+
                         done_payload = {
-                            "delta": "",
+                            "delta": fallback_delta,
                             "done": True,
                             "model": target_model,
                             "prompt_tokens": prompt_eval,
                             "completion_tokens": eval_count,
                             "total_tokens": prompt_eval + eval_count,
                             "duration_ms": duration_ms,
+                            "done_reason": done_reason or "stop",
                         }
                         yield f"data: {json.dumps(done_payload)}\n\n"
                         yield "data: [DONE]\n\n"
@@ -356,7 +466,7 @@ class OllamaAdapter:
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             yield f"data: {json.dumps({'error': f'Connection to Ollama failed at {self.base_url}.', 'done': True})}\n\n"
         except httpx.TimeoutException as exc:
-            yield f"data: {json.dumps({'error': f'Inference timed out after {self.timeout}s for model {target_model}. The model may be too large for GPU VRAM or busy loading.', 'done': True})}\n\n"
+            yield f"data: {json.dumps({'error': f'Inference timed out after {timeout}s for model {target_model}. The model may be too large for GPU VRAM or busy loading.', 'done': True})}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'error': f'Inference error: {str(exc)}', 'done': True})}\n\n"
         finally:

@@ -19,7 +19,7 @@ def test_health_v07_metadata():
         response = client.get("/health")
         assert response.status_code == 200
         data = response.json()
-        assert data["version"] == "0.7.0"
+        assert data["version"] in ["0.7.0", "0.8.0"]
         assert "last_checked_at" in data["runtime"]
         assert "last_error" in data["runtime"]
         assert "is_loaded" in data["model"]

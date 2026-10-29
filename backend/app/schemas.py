@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 class MessagePayload(BaseModel):
     role: Literal["user", "assistant", "system"]
     content: str = Field(..., min_length=1, description="Message text cannot be empty")
+    images: Optional[List[str]] = Field(None, description="Optional list of base64-encoded image strings")
 
 class ChatCompletionRequest(BaseModel):
     conversation_id: Optional[str] = None
@@ -11,6 +12,19 @@ class ChatCompletionRequest(BaseModel):
     model: Optional[str] = Field(None, description="Requested model ID. Uses default if not specified.")
     temperature: Optional[float] = Field(0.7, ge=0.0, le=2.0)
     stream: Optional[bool] = Field(False, description="Whether to stream response chunks via SSE")
+    num_predict: Optional[int] = Field(None, ge=1, le=8192, description="Maximum output tokens to predict")
+    num_ctx: Optional[int] = Field(None, ge=512, le=131072, description="Context window size in tokens")
+    parent_message_id: Optional[str] = Field(None, description="Optional parent message ID")
+
+class ChatContinuationRequest(BaseModel):
+    conversation_id: Optional[str] = None
+    messages: List[MessagePayload] = Field(..., min_length=1, description="Conversation history ending with the target assistant turn")
+    parent_message_id: str = Field(..., min_length=1, description="ID of the assistant message to continue")
+    model: Optional[str] = Field(None, description="Requested model ID. Uses default if not specified.")
+    temperature: Optional[float] = Field(0.7, ge=0.0, le=2.0)
+    stream: Optional[bool] = Field(False, description="Whether to stream continuation chunks via SSE")
+    num_predict: Optional[int] = Field(None, ge=1, le=8192, description="Maximum output tokens to predict")
+    num_ctx: Optional[int] = Field(None, ge=512, le=131072, description="Context window size in tokens")
 
 class UsageStats(BaseModel):
     prompt_tokens: Optional[int] = None
@@ -20,12 +34,24 @@ class UsageStats(BaseModel):
 class AssistantMessage(BaseModel):
     role: Literal["assistant"] = "assistant"
     content: str
+    thinking: Optional[str] = None
 
 class ChatCompletionResponse(BaseModel):
     id: str
     model: str
     mode: Literal["local"] = "local"
     message: AssistantMessage
+    usage: Optional[UsageStats] = None
+    inference_duration_ms: Optional[int] = None
+    done_reason: Optional[str] = None
+
+class ChatContinuationResponse(BaseModel):
+    id: str
+    parent_message_id: str
+    model: str
+    mode: Literal["local"] = "local"
+    continuation: str
+    done_reason: Optional[str] = None
     usage: Optional[UsageStats] = None
     inference_duration_ms: Optional[int] = None
 
@@ -45,7 +71,7 @@ class ModelInfo(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     service: str = "haishin-backend"
-    version: str = "0.7.0"
+    version: str = "0.8.0"
     runtime: RuntimeInfo
     model: ModelInfo
 

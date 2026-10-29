@@ -14,6 +14,8 @@ from .schemas import (
     LocalModelItem,
     ChatCompletionRequest,
     ChatCompletionResponse,
+    ChatContinuationRequest,
+    ChatContinuationResponse,
     AssistantMessage,
     UsageStats,
     SystemResourceInfo,
@@ -25,6 +27,7 @@ from .ollama_adapter import (
     ModelNotFoundError,
     InferenceTimeoutError,
     InferenceError,
+    VisionUnsupportedError,
 )
 from .system_resources import get_system_resources
 from backend.benchmarks.runner import (
@@ -47,7 +50,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Haishin Local AI Backend",
-    version="0.7.0",
+    version="0.8.0",
     description="Local AI inference backend for Haishin workspace by Haitian.",
     lifespan=lifespan,
 )
@@ -294,6 +297,10 @@ async def run_benchmark_endpoint(smoke: bool = False, model: Optional[str] = Non
             ) from exc
 
 
+_active_continuation_locks: set[str] = set()
+_continuation_guard_lock = asyncio.Lock()
+
+
 @app.post(
     "/v1/chat/completions",
     response_model=ChatCompletionResponse,
@@ -304,10 +311,12 @@ async def chat_completions(request: ChatCompletionRequest):
     Accept validated chat messages and return genuine local model completion.
     Translates errors to standard HTTP status codes.
     """
-    messages_payload = [
-        {"role": msg.role, "content": msg.content}
-        for msg in request.messages
-    ]
+    messages_payload = []
+    for msg in request.messages:
+        item = {"role": msg.role, "content": msg.content}
+        if msg.images:
+            item["images"] = msg.images
+        messages_payload.append(item)
 
     if request.stream:
         return StreamingResponse(
@@ -315,6 +324,8 @@ async def chat_completions(request: ChatCompletionRequest):
                 messages=messages_payload,
                 model=request.model,
                 temperature=request.temperature,
+                num_predict=request.num_predict,
+                num_ctx=request.num_ctx,
             ),
             media_type="text/event-stream",
             headers={
@@ -329,7 +340,14 @@ async def chat_completions(request: ChatCompletionRequest):
             messages=messages_payload,
             model=request.model,
             temperature=request.temperature,
+            num_predict=request.num_predict,
+            num_ctx=request.num_ctx,
         )
+    except VisionUnsupportedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
     except RuntimeUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -361,11 +379,129 @@ async def chat_completions(request: ChatCompletionRequest):
         id=str(uuid.uuid4()),
         model=result["model"],
         mode="local",
-        message=AssistantMessage(role="assistant", content=result["content"]),
+        message=AssistantMessage(
+            role="assistant",
+            content=result["content"],
+            thinking=result.get("thinking"),
+        ),
         usage=UsageStats(
             prompt_tokens=result.get("prompt_tokens"),
             completion_tokens=result.get("completion_tokens"),
             total_tokens=result.get("total_tokens"),
         ),
         inference_duration_ms=result.get("duration_ms"),
+        done_reason=result.get("done_reason"),
     )
+
+
+@app.post(
+    "/v1/chat/continue",
+    response_model=ChatContinuationResponse,
+    tags=["Inference"],
+)
+async def chat_continue(request: ChatContinuationRequest):
+    """
+    Safely continue an incomplete assistant response using prefix continuation.
+    Validates target message identity and prevents concurrent continuation on the same message.
+    """
+    if not request.messages:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one message is required in the conversation history.",
+        )
+
+    # Validate that the target continuation message is an assistant turn
+    target_msg = request.messages[-1]
+    if target_msg.role != "assistant":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The target continuation message must have role 'assistant'.",
+        )
+
+    if not target_msg.content.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot continue an empty assistant message.",
+        )
+
+    # Guard against concurrent duplicate continuations for the same message ID
+    async with _continuation_guard_lock:
+        if request.parent_message_id in _active_continuation_locks:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"A continuation request is already active for message '{request.parent_message_id}'.",
+            )
+        _active_continuation_locks.add(request.parent_message_id)
+
+    messages_payload = [
+        {"role": msg.role, "content": msg.content}
+        for msg in request.messages
+    ]
+
+    try:
+        if request.stream:
+            async def stream_wrapper():
+                try:
+                    async for chunk in ollama_adapter.chat_stream(
+                        messages=messages_payload,
+                        model=request.model,
+                        temperature=request.temperature,
+                        num_predict=request.num_predict,
+                        num_ctx=request.num_ctx,
+                    ):
+                        yield chunk
+                finally:
+                    async with _continuation_guard_lock:
+                        _active_continuation_locks.discard(request.parent_message_id)
+
+            return StreamingResponse(
+                stream_wrapper(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+
+        try:
+            result = await ollama_adapter.chat(
+                messages=messages_payload,
+                model=request.model,
+                temperature=request.temperature,
+                num_predict=request.num_predict,
+                num_ctx=request.num_ctx,
+            )
+        except RuntimeUnavailableError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        except ModelNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except InferenceTimeoutError as exc:
+            raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(exc)) from exc
+        except InferenceError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        except Exception as exc:
+            print(f"[Haishin] Continuation inference error: {exc}", flush=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An internal error occurred during continuation inference.",
+            ) from exc
+
+        return ChatContinuationResponse(
+            id=str(uuid.uuid4()),
+            parent_message_id=request.parent_message_id,
+            model=result["model"],
+            mode="local",
+            continuation=result["content"],
+            done_reason=result.get("done_reason"),
+            usage=UsageStats(
+                prompt_tokens=result.get("prompt_tokens"),
+                completion_tokens=result.get("completion_tokens"),
+                total_tokens=result.get("total_tokens"),
+            ),
+            inference_duration_ms=result.get("duration_ms"),
+        )
+    finally:
+        if not request.stream:
+            async with _continuation_guard_lock:
+                _active_continuation_locks.discard(request.parent_message_id)
